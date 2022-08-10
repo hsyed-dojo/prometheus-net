@@ -6,9 +6,11 @@ namespace Prometheus
     public static class PrometheusConstants
     {
         public const string ExporterContentType = "text/plain; version=0.0.4; charset=utf-8";
+        public const string OpenMetricsContentType = "application/openmetrics-text; version=0.0.1; charset=utf-8";
 
         // ASP.NET requires a MediaTypeHeaderValue object
         public static readonly MediaTypeHeaderValue ExporterContentTypeValue = MediaTypeHeaderValue.Parse(ExporterContentType);
+        public static readonly MediaTypeHeaderValue OpenMetricsMediaTypeHeaderValue = MediaTypeHeaderValue.Parse(OpenMetricsContentType);
 
         // Use UTF-8 encoding, but provide the flag to ensure the Unicode Byte Order Mark is never
         // pre-pended to the output stream.

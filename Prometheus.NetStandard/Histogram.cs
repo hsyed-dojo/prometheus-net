@@ -13,16 +13,20 @@ namespace Prometheus
     /// </remarks>
     public sealed class Histogram : Collector<Histogram.Child>, IHistogram
     {
-        private static readonly double[] DefaultBuckets = { .005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10 };
+        private static readonly double[] DefaultBuckets =
+            { .005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10 };
+
         private readonly double[] _buckets;
 
-        internal Histogram(string name, string help, string[]? labelNames, Labels staticLabels, bool suppressInitialValue, double[]? buckets)
+        internal Histogram(string name, string help, string[]? labelNames, Labels staticLabels,
+            bool suppressInitialValue, double[]? buckets)
             : base(name, help, labelNames, staticLabels, suppressInitialValue)
         {
             if (labelNames?.Any(l => l == "le") == true)
             {
                 throw new ArgumentException("'le' is a reserved label name");
             }
+
             _buckets = buckets ?? DefaultBuckets;
 
             if (_buckets.Length == 0)
@@ -65,9 +69,17 @@ namespace Prometheus
                 _bucketIdentifiers = new byte[_upperBounds.Length][];
                 for (var i = 0; i < _upperBounds.Length; i++)
                 {
-                    var value = double.IsPositiveInfinity(_upperBounds[i]) ? "+Inf" : _upperBounds[i].ToString(CultureInfo.InvariantCulture);
+                    var value = double.IsPositiveInfinity(_upperBounds[i])
+                        ? "+Inf"
+                        : _upperBounds[i].ToString(CultureInfo.InvariantCulture);
 
                     _bucketIdentifiers[i] = CreateIdentifier("bucket", ("le", value));
+                }
+
+                _exemplars = new Exemplar[_upperBounds.Length];
+                for (var i = 0; i < _upperBounds.Length; i++)
+                {
+                    _exemplars[i] = new();
                 }
             }
 
@@ -80,32 +92,39 @@ namespace Prometheus
             internal readonly byte[] _sumIdentifier;
             internal readonly byte[] _countIdentifier;
             internal readonly byte[][] _bucketIdentifiers;
+            internal readonly Exemplar[] _exemplars;
 
-            private protected override async Task CollectAndSerializeImplAsync(IMetricsSerializer serializer, CancellationToken cancel)
+            private protected override async Task CollectAndSerializeImplAsync(IMetricsSerializer serializer,
+                CancellationToken cancel)
             {
                 // We output sum.
                 // We output count.
                 // We output each bucket in order of increasing upper bound.
 
-                await serializer.WriteMetricAsync(_sumIdentifier, _sum.Value, cancel);
-                await serializer.WriteMetricAsync(_countIdentifier, _bucketCounts.Sum(b => b.Value), cancel);
+                await serializer.WriteMetricAsync(_sumIdentifier, _sum.Value, null, cancel);
+                await serializer.WriteMetricAsync(_countIdentifier, _bucketCounts.Sum(b => b.Value), null, cancel);
 
                 var cumulativeCount = 0L;
-
+                Exemplar exemplar;
                 for (var i = 0; i < _bucketCounts.Length; i++)
                 {
                     cumulativeCount += _bucketCounts[i].Value;
-
-                    await serializer.WriteMetricAsync(_bucketIdentifiers[i], cumulativeCount, cancel);
+                    lock (_exemplars)
+                        exemplar = _exemplars[i];
+                    await serializer.WriteMetricAsync(_bucketIdentifiers[i], cumulativeCount, exemplar, cancel);
                 }
             }
 
             public double Sum => _sum.Value;
             public long Count => _bucketCounts.Sum(b => b.Value);
 
+            public void Observe(double val, params (string, string)[] exemplar) => ObserveInternal(val, 1, exemplar);
+
             public void Observe(double val) => Observe(val, 1);
 
-            public void Observe(double val, long count)
+            public void Observe(double val, long count) => ObserveInternal(val, count);
+
+            private void ObserveInternal(double val, long count, (string, string)[]? exemplar = null)
             {
                 if (double.IsNaN(val))
                 {
@@ -117,9 +136,13 @@ namespace Prometheus
                     if (val <= _upperBounds[i])
                     {
                         _bucketCounts[i].Add(count);
+                        if (exemplar != null)
+                            lock (_exemplars)
+                                _exemplars[i].Update(exemplar, val);
                         break;
                     }
                 }
+
                 _sum.Add(val * count);
                 Publish();
             }
@@ -131,6 +154,8 @@ namespace Prometheus
         public long Count => Unlabelled.Count;
         public void Observe(double val) => Unlabelled.Observe(val, 1);
         public void Observe(double val, long count) => Unlabelled.Observe(val, count);
+
+        public void Observe(double val, params (string, string)[] exemplar) => Unlabelled.Observe(val, exemplar);
         public void Publish() => Unlabelled.Publish();
         public void Unpublish() => Unlabelled.Unpublish();
 
@@ -148,9 +173,12 @@ namespace Prometheus
         /// <param name="count">The number of buckets to create. Must be positive.</param>
         public static double[] ExponentialBuckets(double start, double factor, int count)
         {
-            if (count <= 0) throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a positive {nameof(count)}");
-            if (start <= 0) throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a positive {nameof(start)}");
-            if (factor <= 1) throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a {nameof(factor)} greater than 1");
+            if (count <= 0)
+                throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a positive {nameof(count)}");
+            if (start <= 0)
+                throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a positive {nameof(start)}");
+            if (factor <= 1)
+                throw new ArgumentException($"{nameof(ExponentialBuckets)} needs a {nameof(factor)} greater than 1");
 
             // The math we do can make it incur some tiny avoidable error due to floating point gremlins.
             // We use decimal for the path to preserve as much accuracy as we can, before finally converting to double.
@@ -216,10 +244,12 @@ namespace Prometheus
         public static double[] PowersOfTenDividedBuckets(int startPower, int endPower, int divisions)
         {
             if (startPower >= endPower)
-                throw new ArgumentException($"{nameof(startPower)} must be less than {nameof(endPower)}.", nameof(startPower));
+                throw new ArgumentException($"{nameof(startPower)} must be less than {nameof(endPower)}.",
+                    nameof(startPower));
 
             if (divisions <= 0)
-                throw new ArgumentOutOfRangeException($"{nameof(divisions)} must be a positive integer.", nameof(divisions));
+                throw new ArgumentOutOfRangeException($"{nameof(divisions)} must be a positive integer.",
+                    nameof(divisions));
 
             var buckets = new List<double>();
 

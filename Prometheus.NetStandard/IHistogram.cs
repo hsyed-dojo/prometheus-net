@@ -11,6 +11,9 @@
         /// <param name="count">Number of observations with this value.</param>
         void Observe(double val, long count);
 
+        // TODO comment
+        void Observe(double val, params (string, string)[] exemplar);
+        
         /// <summary>
         /// Gets the sum of all observed events.
         /// </summary>

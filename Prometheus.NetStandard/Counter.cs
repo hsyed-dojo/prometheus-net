@@ -17,18 +17,30 @@ namespace Prometheus
             private readonly byte[] _identifier;
 
             private ThreadSafeDouble _value;
+            private Exemplar _exemplar = new();
 
-            private protected override Task CollectAndSerializeImplAsync(IMetricsSerializer serializer, CancellationToken cancel)
+            private protected override Task CollectAndSerializeImplAsync(IMetricsSerializer serializer,
+                CancellationToken cancel)
             {
-                return serializer.WriteMetricAsync(_identifier, Value, cancel);
+                Exemplar exemplar;
+                lock (this)
+                    exemplar = _exemplar;
+                return serializer.WriteMetricAsync(_identifier, Value, exemplar, cancel);
             }
 
-            public void Inc(double increment = 1.0)
+            public void Inc(double increment = 1.0, params (string, string)[] exemplar)
             {
                 if (increment < 0.0)
                     throw new ArgumentOutOfRangeException(nameof(increment), "Counter value cannot decrease.");
 
                 _value.Add(increment);
+
+                if (exemplar.Length > 0)
+                {
+                    lock (this)
+                        _exemplar.Update(exemplar, increment);
+                }
+
                 Publish();
             }
 
@@ -51,7 +63,9 @@ namespace Prometheus
         {
         }
 
-        public void Inc(double increment = 1) => Unlabelled.Inc(increment);
+        public void Inc(double increment = 1, params (string, string)[] exemplar) =>
+            Unlabelled.Inc(increment, exemplar);
+
         public void IncTo(double targetValue) => Unlabelled.IncTo(targetValue);
         public double Value => Unlabelled.Value;
 

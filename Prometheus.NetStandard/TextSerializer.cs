@@ -13,16 +13,19 @@ namespace Prometheus
     {
         private static readonly byte[] NewLine = new[] { (byte)'\n' };
         private static readonly byte[] Space = new[] { (byte)' ' };
+        private static readonly byte[] ExemplarDelim = new[] { (byte)' ', (byte)'#' , (byte)' ',};
 
-        public TextSerializer(Stream stream)
+        public TextSerializer(Stream stream, bool openMetrics = false)
         {
             _stream = new Lazy<Stream>(() => stream);
+            _openMetrics = openMetrics;
         }
 
         // Enables delay-loading of the stream, because touching stream in HTTP handler triggers some behavior.
-        public TextSerializer(Func<Stream> streamFactory)
+        public TextSerializer(Func<Stream> streamFactory, bool openMetrics = false)
         {
             _stream = new Lazy<Stream>(streamFactory);
+            _openMetrics = openMetrics;
         }
 
         public async Task FlushAsync(CancellationToken cancel)
@@ -35,7 +38,8 @@ namespace Prometheus
         }
 
         private readonly Lazy<Stream> _stream;
-
+        private readonly bool _openMetrics;
+        
         // # HELP name help
         // # TYPE name type
         public async Task WriteFamilyDeclarationAsync(byte[][] headerLines, CancellationToken cancel)
@@ -47,6 +51,11 @@ namespace Prometheus
             }
         }
 
+        public Task WriteMetricAsync(byte[] identifier, double value, CancellationToken cancel)
+        {
+            return WriteMetricAsync(identifier, value, null, cancel);
+        }
+
         // Reuse a buffer to do the UTF-8 encoding.
         // Maybe one day also ValueStringBuilder but that would be .NET Core only.
         // https://github.com/dotnet/corefx/issues/28379
@@ -54,17 +63,24 @@ namespace Prometheus
         private readonly byte[] _stringBytesBuffer = new byte[32];
 
         // name{labelkey1="labelvalue1",labelkey2="labelvalue2"} 123.456
-        public async Task WriteMetricAsync(byte[] identifier, double value, CancellationToken cancel)
+        public async Task WriteMetricAsync(byte[] identifier, double value, Exemplar? exemplar, CancellationToken cancel)
         {
             await _stream.Value.WriteAsync(identifier, 0, identifier.Length, cancel);
             await _stream.Value.WriteAsync(Space, 0, Space.Length, cancel);
-
+            
             var valueAsString = value.ToString(CultureInfo.InvariantCulture);
-
+            
+            // TODO write all numbers in openmetrics format.
             var numBytes = PrometheusConstants.ExportEncoding
                 .GetBytes(valueAsString, 0, valueAsString.Length, _stringBytesBuffer, 0);
 
             await _stream.Value.WriteAsync(_stringBytesBuffer, 0, numBytes, cancel);
+            if (_openMetrics && exemplar is { IsValid: true })
+            {
+                // await _stream.Value.WriteAsync(ExemplarDelim, 0, ExemplarDelim.Length, cancel);
+                // var data = PrometheusConstants.ExportEncoding.GetBytes(exemplar);
+                // await _stream.Value.WriteAsync(data, 0, data.Length);
+            }
             await _stream.Value.WriteAsync(NewLine, 0, NewLine.Length, cancel);
         }
     }

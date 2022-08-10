@@ -21,6 +21,11 @@ namespace Prometheus
         Task WriteMetricAsync(byte[] identifier, double value, CancellationToken cancel);
 
         /// <summary>
+        /// Writes a single metric in a metric family.
+        /// </summary>
+        Task WriteMetricAsync(byte[] identifier, double value, Exemplar? exemplar, CancellationToken cancel);
+
+        /// <summary>
         /// Flushes any pending buffers. Always call this after all your write calls.
         /// </summary>
         Task FlushAsync(CancellationToken cancel);

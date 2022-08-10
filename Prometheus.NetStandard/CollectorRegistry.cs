@@ -151,7 +151,7 @@ namespace Prometheus
             if (to == null)
                 throw new ArgumentNullException(nameof(to));
 
-            return CollectAndSerializeAsync(new TextSerializer(to), cancel);
+            return CollectAndSerializeAsync(new TextSerializer(to, false), cancel);
         }
 
 

@@ -16,13 +16,13 @@ namespace Prometheus
 
         public TextSerializer(Stream stream)
         {
-            _stream = new Lazy<Stream>(() => stream);
+            _stream = new Lazy<StreamWriter>(() => new StreamWriter(stream));
         }
 
         // Enables delay-loading of the stream, because touching stream in HTTP handler triggers some behavior.
         public TextSerializer(Func<Stream> streamFactory)
         {
-            _stream = new Lazy<Stream>(streamFactory);
+            _stream = new Lazy<StreamWriter>(() => new StreamWriter(streamFactory.Invoke()));
         }
 
         public async Task FlushAsync(CancellationToken cancel)
@@ -31,21 +31,30 @@ namespace Prometheus
             if (!_stream.IsValueCreated)
                 return;
 
-            await _stream.Value.FlushAsync(cancel);
+            await _stream.Value.FlushAsync();
         }
 
-        private readonly Lazy<Stream> _stream;
+        private readonly Lazy<StreamWriter> _stream;
 
         // # HELP name help
         // # TYPE name type
-        public async Task WriteFamilyDeclarationAsync(byte[][] headerLines, CancellationToken cancel)
+        public async Task WriteFamilyDeclarationAsync(char[][] headerLines, CancellationToken cancel)
         {
             foreach (var line in headerLines)
             {
-                await _stream.Value.WriteAsync(line, 0, line.Length, cancel);
-                await _stream.Value.WriteAsync(NewLine, 0, NewLine.Length, cancel);
+                var x = new ReadOnlyMemory<char>(line);
+                
+                await _stream.Value.WriteLineAsync(x, cancel);
+                await _stream.Value.WriteAsync(NewLine, 0, NewLine.Length);
             }
         }
+
+        public async Task WriteSampleAsync(string name, Labels labels, CancellationToken cancel, string? suffix = null,
+            (string, double)? additionalLabel = null)
+        {
+            var sw = new StreamWriter(_stream.Value);
+        }
+
 
         // Reuse a buffer to do the UTF-8 encoding.
         // Maybe one day also ValueStringBuilder but that would be .NET Core only.

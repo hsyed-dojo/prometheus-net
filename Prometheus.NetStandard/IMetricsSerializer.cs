@@ -20,6 +20,15 @@ namespace Prometheus
         /// </summary>
         Task WriteMetricAsync(byte[] identifier, double value, CancellationToken cancel);
 
+        Task WriteSampleAsync(
+            string name,
+            Labels labels,
+            CancellationToken cancel,
+            string? suffix = null,
+            (string, double)? additionalLabel = null
+        );
+
+
         /// <summary>
         /// Flushes any pending buffers. Always call this after all your write calls.
         /// </summary>

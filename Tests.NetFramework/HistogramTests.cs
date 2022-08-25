@@ -15,7 +15,7 @@ namespace Prometheus.Tests
 
             var histogram = factory.CreateHistogram("xxx", "", new HistogramConfiguration
             {
-                Buckets = new[] { 1.0, 2.0, 3.0 }
+                Buckets = new[] { 1, 2.1, 3.0 }
             });
 
             histogram.Observe(2.0);

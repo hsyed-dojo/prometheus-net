@@ -65,8 +65,20 @@ namespace Prometheus
                 _bucketIdentifiers = new byte[_upperBounds.Length][];
                 for (var i = 0; i < _upperBounds.Length; i++)
                 {
-                    var value = double.IsPositiveInfinity(_upperBounds[i]) ? "+Inf" : _upperBounds[i].ToString(CultureInfo.InvariantCulture);
-
+                    string value;
+                    if (double.IsPositiveInfinity(_upperBounds[i]))
+                    {
+                        value = "+Inf";
+                    }
+                    else
+                    {
+                        value = _upperBounds[i].ToString("g", CultureInfo.InvariantCulture);
+                        if (!value.Contains('.') && !value.Contains('e'))
+                        {
+                            value += ".0";
+                        }
+                    }
+                    
                     _bucketIdentifiers[i] = CreateIdentifier("bucket", ("le", value));
                 }
             }
